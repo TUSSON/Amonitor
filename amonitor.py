@@ -12,6 +12,7 @@ from subprocess import Popen, call
 import sys, time
 from threading import Timer
 from monkey import Monkey
+from aservice import AMonitorService, AMonkeyService
 from keymap import vkeyToAndroidMaps
 
 class KeyButton(QPushButton):
@@ -36,18 +37,30 @@ class KeyButton(QPushButton):
 class Monitor(QWidget):
     def __init__(self, url, monkeyUrl=None,  parent=None):
         super().__init__(parent)
-        self.url = url
-        self.monkeyUrl = monkeyUrl
         self.timer = QBasicTimer()
+        self.initService(url, monkeyUrl)
         self.initUI()
-        self.startServer()
-        self.connect()
+        self.timercount = 0
+        self.framecount = 0
         self.timer.start(15, self)
+
+    def initService(self, url, monkeyUrl):
+        print('{} initService: {}'.format(time.monotonic(), 'start'))
+        # start screen monitor service
+        self.player = None
+        self.monitorService = AMonitorService(
+                cb=self.monitorStatusChanged, url=url)
+        self.monitorService.start()
+        # start monkey service
+        self.monkey = None
+        self.monkeyService = AMonkeyService(
+                cb=self.monkeyStatusChanged, url=monkeyUrl)
+        self.monkeyService.start()
 
     def initUI(self):
         self.dw = 1080
         self.dh = 1920
-        self.setGeometry(600, 100, 300, 300)
+        self.setGeometry(600, 100, 300, 350)
         self.ratio = self.height() / self.width()
         self.scrolltimer = None
         self.scrollstep = 0
@@ -63,7 +76,7 @@ class Monitor(QWidget):
         self.lbl.setFocusPolicy(Qt.NoFocus)
         vbox.addWidget(self.lbl)
 
-        hbox = QHBoxLayout(self)
+        hbox = QHBoxLayout()
         hbox.setContentsMargins(0, 0, 0, 0)
         hbox.setSpacing(0)
         bn_vu = KeyButton('🔊', None, self, 'KEYCODE_VOLUME_UP')
@@ -89,87 +102,45 @@ class Monitor(QWidget):
         self.updateTitleStatus('≠')
         self.show()
 
+    def monitorStatusChanged(self, status):
+        print('{} monitor: {}'.format(time.monotonic(), status))
+        if status == 'connected':
+            self.player = self.monitorService.player
+
+    def monkeyStatusChanged(self, status):
+        print('{} monkey: {}'.format(time.monotonic(), status))
+        if status == 'connected':
+            self.monkey = self.monkeyService.monkey
+            self.updateDeviceRes()
+            if self.framecount > 0:
+                self.updateTitleStatus()
+        elif status == 'disconnected':
+            self.updateTitleStatus('≠')
+
+    def reConnect(self):
+        self.player = None
+        self.monkey = None
+        self.monitorService.disconnect()
+        self.monitorService.connect()
+        self.monkeyService.stop()
+        self.monkeyService.start()
+
     def updateTitleStatus(self, status='', fps=0):
         txt = 'amonitor ' + status
         if fps > 0:
             txt = 'amonitor fps: {}'.format(fps)
         self.setWindowTitle(txt)
 
-    def startServer(self):
-        servicecmds = 'adb shell am start com.rock_chips.monitorservice/.MainActivity'
-        Popen(servicecmds.split(' '))
-
-    def stopServer(self):
-        stopservicecmds = 'adb shell am force-stop com.rock_chips.monitorservice'
-        call(stopservicecmds.split(' '))
-
-    def connect(self):
-        self.framecount = 0
-        self.timercount = 0
-        call('adb forward tcp:50000 tcp:50000'.split(' '))
-        call('adb forward tcp:50001 tcp:50001'.split(' '))
-        monkeycmds = 'adb shell /data/local/tmp/monkey --port 50001'
-        self.pmonkey = None
-        if self.monkeyUrl:
-            self.pmonkey = Popen(monkeycmds.split(' '))
-        self.player = None
-        self.monkey = None
-        self.monkeyTimer = None
-        if self.monkeyUrl:
-            self.monkeyTimer = Timer(2, self.connectMonkey)
-            self.monkeyTimer.start()
-        self.monitorTimer = None
-        self.connectMonitor()
-
-    def disConnect(self):
-        if self.monkeyTimer:
-            self.monkeyTimer.cancel()
-        if self.monitorTimer:
-            self.monitorTimer.cancel()
-        self.player.close_player()
-        self.player = None
-        if self.monkey:
-            self.monkey.quit()
-            self.monkey = None
-        if self.pmonkey:
-            self.pmonkey.kill()
-            self.pmonkey.wait()
-            self.pmonkey = None
-
-    def connectMonitor(self):
-        lib_opts = {'analyzeduration': '32', 'flags': 'low_delay'}
-        player = self.player
-        self.player = None
-        if player:
-            player.close_player()
-        self.player = MediaPlayer(self.url,
-                                  callback=self.mediaPlayerCallback,
-                                  lib_opts=lib_opts)
-
-    def mediaPlayerCallback(self, selector, value):
-        print('callback:', selector)
-        self.updateTitleStatus('≠')
-        if selector == 'read:error':
-            self.monitorTimer = Timer(1, self.connectMonitor)
-            self.monitorTimer.start()
-
-    def connectMonkey(self):
-        self.monkeyTimer = None
-        try:
-            self.monkey = Monkey(self.monkeyUrl)
-        except OSError:
-            return
-
+    def updateDeviceRes(self):
         try:
             dw = int(self.monkey.getvar('display.width'))
             dh = int(self.monkey.getvar('display.height'))
         except ValueError:
+            print('get device resolution failed!')
             return
 
         self.dw = dw
         self.dh = dh
-        if self.framecount > 0:
-            self.updateTitleStatus()
         print('device res is', self.dw, 'x', self.dh)
 
     def update(self):
@@ -182,6 +153,8 @@ class Monitor(QWidget):
         if val == 'eof':
             pass
         elif frame is not None:
+            if self.framecount == 0:
+                print('{} first frame'.format(time.monotonic()))
             img, t = frame
             iw, ih = img.get_size()
             ratio = ih / iw
@@ -318,7 +291,6 @@ class Monitor(QWidget):
     def contextMenuEvent(self, event):
         menu = QMenu(self)
         reconnect = menu.addAction("ReConnect")
-        restart = menu.addAction("RestartService")
         navbar = menu.addAction("Show/Hide Navigation Bar")
         rotateMenu = QMenu('Rotate', menu)
         menu.addMenu(rotateMenu)
@@ -331,13 +303,7 @@ class Monitor(QWidget):
             self.hboxframe.setVisible(not self.hboxframe.isVisible())
             self.resize(self.width(), self.height() + 1)
         elif reconnect == action:
-            self.disConnect()
-            self.connect()
-        elif restart == action:
-            self.disConnect()
-            self.stopServer()
-            self.startServer()
-            self.connect()
+            self.reConnect()
         elif injectAllow == action:
             self.injectAllowMonitor()
         elif action in rotate:
@@ -346,7 +312,8 @@ class Monitor(QWidget):
 
     def closeEvent(self, event):
         self.timer.stop()
-        self.disConnect()
+        self.monitorService.stop()
+        self.monkeyService.stop()
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)

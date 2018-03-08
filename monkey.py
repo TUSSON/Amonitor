@@ -3,10 +3,11 @@ import socket
 class Monkey:
     def __init__(self, url):
         self.url = url
+        self.s = None
         urllist = url.split(':')
         port = int(urllist[-1])
         host = urllist[-2][2:]
-        for res in socket.getaddrinfo( host, port,
+        for res in socket.getaddrinfo(host, port,
                 socket.AF_UNSPEC,
                 socket.SOCK_STREAM,
                 flags=socket.NI_NUMERICSERV):
@@ -33,7 +34,7 @@ class Monkey:
     def sendEvent(self, cmd):
         try:
             self.s.sendall(bytes(cmd + '\n', 'utf-8'))
-        except BrokenPipeError:
+        except:
             return 'FAILED'
         data = self.s.recv(1024)
         return data.decode('utf-8')[0:-1]

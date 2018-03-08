@@ -23,12 +23,6 @@ High frame rate low latency and free open source screen monitor for Android (lik
 ## Installation
 - Make sure all the requirements are ready.
 - [Connect phone and enable adb](https://developer.android.com/studio/command-line/adb.html#Enabling)
-- Install service app
-```bash
-cd app
-./install.sh
-cd ../
-```
 - Run amonitor
 ```
 ./amonitor.py
@@ -37,3 +31,6 @@ cd ../
 ## Problems
 1. Latency too large, last frame not update.
 > Please enable floating window permission.
+
+2. The device's screen or touchscreen is bad, how to enable the permissions?
+> please try 'InjectAllowMonitor' action in the right-click menu.

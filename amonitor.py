@@ -14,13 +14,6 @@ from threading import Timer
 from monkey import Monkey
 from keymap import vkeyToAndroidMaps
 
-'''
-TODO:
-    * support bit-rate, encode resolution config
-    * support rotate
-    * support record operation event and replay
-'''
-
 class KeyButton(QPushButton):
     def __init__(self, text='', icon=None, parent=None, keycode=None):
         if icon:
@@ -47,16 +40,18 @@ class Monitor(QWidget):
         self.monkeyUrl = monkeyUrl
         self.timer = QBasicTimer()
         self.initUI()
+        self.startServer()
         self.connect()
-        self.framecount = 0
-        self.timercount = 0
         self.timer.start(15, self)
 
     def initUI(self):
-        self.setGeometry(600, 100, 300, 400)
+        self.dw = 1080
+        self.dh = 1920
+        self.setGeometry(600, 100, 300, 300)
         self.ratio = self.height() / self.width()
         self.scrolltimer = None
         self.scrollstep = 0
+        self.resizetimer = None
 
         vbox = QVBoxLayout(self)
         vbox.setContentsMargins(0, 0, 0, 0)
@@ -91,19 +86,29 @@ class Monitor(QWidget):
         self.vbox = vbox
         self.hboxframe = hboxframe
 
-        self.setWindowTitle('amonitor')
+        self.updateTitleStatus('≠')
         self.show()
 
+    def updateTitleStatus(self, status='', fps=0):
+        txt = 'amonitor ' + status
+        if fps > 0:
+            txt = 'amonitor fps: {}'.format(fps)
+        self.setWindowTitle(txt)
+
+    def startServer(self):
+        servicecmds = 'adb shell am start com.rock_chips.monitorservice/.MainActivity'
+        Popen(servicecmds.split(' '))
+
+    def stopServer(self):
+        stopservicecmds = 'adb shell am force-stop com.rock_chips.monitorservice'
+        call(stopservicecmds.split(' '))
+
     def connect(self):
+        self.framecount = 0
+        self.timercount = 0
         call('adb forward tcp:50000 tcp:50000'.split(' '))
         call('adb forward tcp:50001 tcp:50001'.split(' '))
         monkeycmds = 'adb shell /data/local/tmp/monkey --port 50001'
-        servicecmds = 'adb shell am start com.rock_chips.monitorservice/.MainActivity'
-        stopservicecmds = 'adb shell am force-stop com.rock_chips.monitorservice'
-        call(stopservicecmds.split(' '))
-        call(servicecmds.split(' '))
-        self.dw = 1080
-        self.dh = 1920
         self.pmonkey = None
         if self.monkeyUrl:
             self.pmonkey = Popen(monkeycmds.split(' '))
@@ -143,6 +148,7 @@ class Monitor(QWidget):
 
     def mediaPlayerCallback(self, selector, value):
         print('callback:', selector)
+        self.updateTitleStatus('≠')
         if selector == 'read:error':
             self.monitorTimer = Timer(1, self.connectMonitor)
             self.monitorTimer.start()
@@ -162,6 +168,8 @@ class Monitor(QWidget):
 
         self.dw = dw
         self.dh = dh
+        if self.framecount > 0:
+            self.updateTitleStatus()
         print('device res is', self.dw, 'x', self.dh)
 
     def update(self):
@@ -179,7 +187,7 @@ class Monitor(QWidget):
             ratio = ih / iw
             if ratio != self.ratio:
                 self.ratio = ratio
-                self.resize(self.width()+1, self.height())
+                self.requstResize()
             imgbyte = img.to_bytearray()[0]
             qimg = QImage(imgbyte, iw, ih, QImage.Format_RGB888)
             '''
@@ -189,21 +197,52 @@ class Monitor(QWidget):
                                Qt.SmoothTransformation)
             '''
             self.lbl.setPixmap(QPixmap(qimg))
-            self.framecount += 1
             if self.timercount > 200:
-                print('iw:', iw, 'ih:', ih, 'fps: ', int(self.framecount / 3))
+                fps = int(self.framecount / 3)
+                if fps > 0:
+                    self.updateTitleStatus(fps=fps)
+                print('iw:', iw, 'ih:', ih, 'fps: ', fps)
                 self.framecount = 0
                 self.timercount = 0
+            self.framecount += 1
 
     def timerEvent(self, event):
         self.update()
 
+    def resizeKeepRatio(self):
+        fw = self.width()
+        fh = self.height()
+        iw = self.lbl.width()
+        ih = self.lbl.height()
+        oh = fh - ih
+        print('resize:', iw, ih)
+        if self.ratio > 1:
+            iw = min(iw, ih)
+            ih = int(iw * self.ratio + 0.5)
+        else:
+            ih = min(iw, ih)
+            iw = int(ih / self.ratio + 0.5)
+        ih += oh
+
+        if fw != iw or fh != ih:
+            self.resize(iw, ih)
+
+    def requstResize(self):
+        dh = max(self.dw, self.dh)
+        dw = min(self.dw, self.dh)
+        if self.ratio > 1:
+            self.dh = dh
+            self.dw = dw
+        else:
+            self.dw = dh
+            self.dh = dw
+        if self.resizetimer:
+            self.resizetimer.cancel()
+        self.resizetimer = Timer(0.2, self.resizeKeepRatio)
+        self.resizetimer.start()
+
     def resizeEvent(self, event):
-        nh = int(self.lbl.width() * self.ratio + 0.5)
-        oh = self.height() - self.lbl.height()
-        ih = nh + oh
-        if self.height() != ih:
-            self.resize(self.lbl.width(), ih)
+        self.requstResize()
 
     def getDeviceXY(self, pos):
         dx = pos.x() * self.dw / self.lbl.width()
@@ -260,10 +299,30 @@ class Monitor(QWidget):
                 dkey = vkeyToAndroidMaps[key]
                 self.monkey.keyUp(dkey)
 
+    def injectAllowMonitor(self):
+        if self.monkey:
+            self.monkey.press('KEYCODE_TAB')
+            time.sleep(0.1)
+            self.monkey.press('KEYCODE_DPAD_CENTER')
+            time.sleep(0.1)
+            self.monkey.press('KEYCODE_DPAD_DOWN')
+            time.sleep(0.1)
+            self.monkey.press('KEYCODE_DPAD_RIGHT')
+            time.sleep(0.1)
+            self.monkey.press('KEYCODE_DPAD_CENTER')
+
+    def rotate(self, degree):
+        if self.monkey:
+            self.monkey.rotate(degree)
+
     def contextMenuEvent(self, event):
         menu = QMenu(self)
         reconnect = menu.addAction("ReConnect")
+        restart = menu.addAction("RestartService")
         navbar = menu.addAction("Show/Hide Navigation Bar")
+        rotateMenu = QMenu('Rotate', menu)
+        menu.addMenu(rotateMenu)
+        rotate = [rotateMenu.addAction(i) for i in ['Portrait', 'Landscape']]
         injectAllow = -1
         if self.monkey and self.framecount == 0:
             injectAllow = menu.addAction("InjectAllowMonitor")
@@ -274,17 +333,16 @@ class Monitor(QWidget):
         elif reconnect == action:
             self.disConnect()
             self.connect()
+        elif restart == action:
+            self.disConnect()
+            self.stopServer()
+            self.startServer()
+            self.connect()
         elif injectAllow == action:
-            print('injectAllow')
-            self.monkey.press('KEYCODE_TAB')
-            time.sleep(0.1)
-            self.monkey.press('KEYCODE_DPAD_CENTER')
-            time.sleep(0.1)
-            self.monkey.press('KEYCODE_DPAD_DOWN')
-            time.sleep(0.1)
-            self.monkey.press('KEYCODE_DPAD_RIGHT')
-            time.sleep(0.1)
-            self.monkey.press('KEYCODE_DPAD_CENTER')
+            self.injectAllowMonitor()
+        elif action in rotate:
+            index = rotate.index(action)
+            self.rotate(index)
 
     def closeEvent(self, event):
         self.timer.stop()

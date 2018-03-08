@@ -5,7 +5,7 @@
 - [x] screen monitoring
 - [x] keyboard/touch spport
 - [x] navigation bar
-- [ ] rotate screen
+- [x] rotate screen
 - [ ] Input events record and replay
 - [ ] screenshot, screen record
 - [ ] bit-rate, encode resolution config

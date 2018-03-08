@@ -58,6 +58,11 @@ class Monkey:
         if ret != 'OK':
             print('touch', x, y, ret)
 
+    def rotate(self, degree):
+        ret = self.sendEvent('rotate {} true'.format(degree))
+        if ret != 'OK':
+            print('rotate', degree, ret)
+
     def scroll(self, dx, dy):
         ret = self.sendEvent('trackball {} {}'.format(dx, dy))
         if ret != 'OK':

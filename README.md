@@ -18,6 +18,7 @@ High frame rate low latency and free open source screen monitor for Android (lik
 
 ## Requirements
 - [python3](https://www.python.org/downloads/)
+- [pyqt5](http://pyqt.sourceforge.net/Docs/PyQt5/installation.html)
 - [ffpyplayer](http://https://matham.github.io/ffpyplayer/installation.html)
 - [adb](https://developer.android.com/studio/command-line/adb.html)
 

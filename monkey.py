@@ -1,7 +1,9 @@
 import socket
+import threading
 
 class Monkey:
     def __init__(self, url):
+        self.lock = threading.Lock()
         self.url = url
         self.s = None
         urllist = url.split(':')
@@ -32,12 +34,16 @@ class Monkey:
         self.s = s
 
     def sendEvent(self, cmd):
-        try:
-            self.s.sendall(bytes(cmd + '\n', 'utf-8'))
-        except:
-            return 'FAILED'
-        data = self.s.recv(1024)
-        return data.decode('utf-8')[0:-1]
+        with self.lock:
+            ret = 'FAILED'
+            try:
+                self.s.sendall(bytes(cmd + '\n', 'utf-8'))
+                data = self.s.recv(1024)
+                ret = data.decode('utf-8')[0:-1]
+            except:
+                pass
+            finally:
+                return ret
 
     def touchDown(self, x, y):
         ret = self.sendEvent('touch down {} {}'.format(x, y))

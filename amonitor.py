@@ -106,6 +106,9 @@ class Monitor(QWidget):
         print('{} monitor: {}'.format(time.monotonic(), status))
         if status == 'connected':
             self.player = self.monitorService.player
+        elif status == 'disconnected':
+            self.player = None
+            self.updateTitleStatus('≠')
 
     def monkeyStatusChanged(self, status):
         print('{} monkey: {}'.format(time.monotonic(), status))
@@ -115,15 +118,8 @@ class Monitor(QWidget):
             if self.framecount > 0:
                 self.updateTitleStatus()
         elif status == 'disconnected':
+            self.monkey = None
             self.updateTitleStatus('≠')
-
-    def reConnect(self):
-        self.player = None
-        self.monkey = None
-        self.monitorService.disconnect()
-        self.monitorService.connect()
-        self.monkeyService.stop()
-        self.monkeyService.start()
 
     def updateTitleStatus(self, status='', fps=0):
         txt = 'amonitor ' + status
@@ -290,7 +286,6 @@ class Monitor(QWidget):
 
     def contextMenuEvent(self, event):
         menu = QMenu(self)
-        reconnect = menu.addAction("ReConnect")
         navbar = menu.addAction("Show/Hide Navigation Bar")
         rotateMenu = QMenu('Rotate', menu)
         menu.addMenu(rotateMenu)
@@ -302,8 +297,6 @@ class Monitor(QWidget):
         if navbar == action:
             self.hboxframe.setVisible(not self.hboxframe.isVisible())
             self.resize(self.width(), self.height() + 1)
-        elif reconnect == action:
-            self.reConnect()
         elif injectAllow == action:
             self.injectAllowMonitor()
         elif action in rotate:

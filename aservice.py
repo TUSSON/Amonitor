@@ -1,4 +1,4 @@
-from subprocess import Popen, call, TimeoutExpired, PIPE
+from subprocess import Popen, call, TimeoutExpired, PIPE, STDOUT
 from threading import Timer
 from ffpyplayer.player import MediaPlayer
 from monkey import Monkey
@@ -43,15 +43,17 @@ class AMonitorService(AService):
         self.tryTimer = None
 
     def install(self):
-        ecall('adb install -r -g app/MonitorService.apk')
-        super().install()
+        ret = ecall('adb install -r -g app/MonitorService.apk')
+        if ret == 0:
+            super().install()
 
     def _start(self):
         cmds = 'adb shell am start com.rock_chips.monitorservice/.MainActivity'
-        self.popen = Popen(cmds.split(), stdout=PIPE)
+        self.popen = Popen(cmds.split(), stdout=PIPE, stderr=STDOUT)
         Timer(0.1, self._processStartResult).start()
 
     def start(self):
+        self.needStop = False
         # try connect first for fast boot
         self.connect()
         self._start()
@@ -60,30 +62,49 @@ class AMonitorService(AService):
         fd = self.popen.stdout
         line1 = fd.readline().decode()
         line2 = fd.readline().decode()
-        if line2.startswith('Error'):
-            self.install()
-            self._start()
-        elif line1.startswith('Starting'):
+        if line1.startswith('Starting') and not line2.startswith('Error'):
             self.callCb('started')
+            return
+        time.sleep(1)
+        if self.needStop:
+            return
+        # try install and start again
+        self.popen = None
+        self.install()
+        self._start()
+
+    def stop(self):
+        self.popen = None
+        self.needStop = True
+        self.disconnect()
+        self.callCb('stoped')
 
     def connect(self):
+        if self.needStop:
+            return
         if self.url is None:
             print('need url for connect')
             return
 
         ecall('adb forward tcp:50000 tcp:50000')
         lib_opts = {'analyzeduration': '32', 'flags': 'low_delay'}
+        if self.player:
+            self.player.close_player()
+            self.player = None
         self.player = MediaPlayer(self.url,
                                   callback=self._mediaPlayerCallback,
                                   lib_opts=lib_opts)
         self.connectedTimer = Timer(0.1, self._processConnectResult)
         self.connectedTimer.start()
-        self.timer = 1
 
     def _mediaPlayerCallback(self, selector, value):
-        self.connectedTimer.cancel()
-        if selector == 'read:error':
-            self.player.close_player()
+        if self.connectedTimer:
+            self.connectedTimer.cancel()
+            self.connectedTimer = None
+
+        if selector in ('read:error', 'eof'):
+            self.callCb('disconnected')
+            self.tryTimer = None
             self.tryTimer = Timer(1, self.connect)
             self.tryTimer.start()
 
@@ -93,6 +114,7 @@ class AMonitorService(AService):
     def disconnect(self):
         if self.tryTimer:
             self.tryTimer.cancel()
+            self.tryTimer = None
         if self.player:
             self.player.close_player()
         super().disconnect()
@@ -104,32 +126,52 @@ class AMonkeyService(AService):
         self.url = url
         self.monkey = None
         self.tryTimer = None
+        self.watchDogTimer = None
 
     def install(self):
-        ecall('adb push app/monkey.jar /data/local/tmp/')
-        ecall('adb push app/monkey /data/local/tmp/')
-        ecall('adb shell chmod u+x /data/local/tmp/monkey')
-        super().install()
+        ret = ecall('adb push app/monkey.jar /data/local/tmp/')
+        ret |= ecall('adb push app/monkey /data/local/tmp/')
+        ret |= ecall('adb shell chmod u+x /data/local/tmp/monkey')
+        if ret == 0:
+            super().install()
+
+    def _start(self):
+        cmds = 'adb shell /data/local/tmp/monkey --port 50001'
+        self.popen = Popen(cmds.split(), stdout=PIPE, stderr=STDOUT)
+        self.tryTimer = Timer(0.1, self._processStartResult)
+        self.tryTimer.start()
 
     def start(self):
-        cmds = 'adb shell /data/local/tmp/monkey --port 50001'
-        self.popen = Popen(cmds.split(), stdout=PIPE)
-        Timer(0.1, self._processStartResult).start()
+        self.needStop = False
+        self._start()
 
     def _processStartResult(self):
         try:
             self.popen.wait(1)
             fd = self.popen.stdout
             line = fd.readline().decode()
+            time.sleep(1)
+            if self.needStop:
+                return
             if not line.startswith('Error binding'):
+                # try install and start again
+                self.popen = None
                 self.install()
-                self.start()
+                self._start()
                 return
         except TimeoutExpired:
             pass
         super().start()
 
+    def stop(self):
+        self.needStop = True
+        self.disconnect()
+        self.popen = None
+        self.callCb('stoped')
+
     def connect(self):
+        if self.needStop:
+            return
         if self.url is None:
             print('need url for connect')
             return
@@ -138,6 +180,7 @@ class AMonkeyService(AService):
         try:
             monkey = Monkey(self.url)
         except OSError:
+            self.tryTimer = None
             self.tryTimer = Timer(1, self.connect)
             self.tryTimer.start()
             return
@@ -147,15 +190,38 @@ class AMonkeyService(AService):
 
     def _processConnectResult(self):
         ret = self.monkey.getvar('build.id')
-        print('ret:', ret)
         if ret != 'FAILED' and len(ret) > 0:
+            # connected
             super().connect()
+            # start watchDogTimer
+            if self.watchDogTimer:
+                self.watchDogTimer.cancel()
+                self.watchDogTimer = None
+            self.watchDogTimer = Timer(2, self.watchDogDetect)
+            self.watchDogTimer.start()
         else:
+            # retry connect
+            self.monkey = None
             self.connect()
 
+    def watchDogDetect(self):
+        self.watchDogTimer = None
+        ret = self.monkey.getvar('build.id')
+        if ret != 'FAILED' and len(ret) > 0:
+            self.watchDogTimer = Timer(2, self.watchDogDetect)
+            self.watchDogTimer.start()
+        else:
+            # restart service
+            self._start()
+
     def disconnect(self):
+        if self.watchDogTimer:
+            self.watchDogTimer.cancel()
+            self.watchDogTimer = None
+
         if self.tryTimer:
             self.tryTimer.cancel()
+            self.tryTimer = None
         if self.monkey:
             self.monkey.quit()
             self.monkey = None

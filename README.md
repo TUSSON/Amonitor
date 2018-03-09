@@ -6,6 +6,7 @@
 - [x] keyboard/touch spport
 - [x] navigation bar
 - [x] rotate screen
+- [x] auto install app and  auto reconnect
 - [ ] Input events record and replay
 - [ ] screenshot, screen record
 - [ ] bit-rate, encode resolution config

@@ -98,6 +98,7 @@ class Monitor(QWidget):
         vbox.addWidget(hboxframe)
         self.vbox = vbox
         self.hboxframe = hboxframe
+        self.hboxframe.setVisible(False)
 
         self.updateTitleStatus('≠')
         self.show()

@@ -9,7 +9,7 @@ from PyQt5.QtCore import QThread, QBasicTimer, Qt, QEvent, QSize
 from ffpyplayer.pic import Image
 from ffpyplayer.player import MediaPlayer
 from subprocess import Popen, call
-import sys, time
+import sys, time, os
 from threading import Timer
 from monkey import Monkey
 from aservice import AMonitorService, AMonkeyService

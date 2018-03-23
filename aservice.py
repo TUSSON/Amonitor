@@ -2,11 +2,32 @@ from subprocess import Popen, call, TimeoutExpired, PIPE, STDOUT
 from threading import Timer
 from ffpyplayer.player import MediaPlayer
 from monkey import Monkey
-import time
+import time, os
 
 
 def ecall(cmds):
-    return call(cmds.split(' '))
+    return call(cmds.split())
+
+
+def ecallv(cmds, timeout=1):
+    p = Popen(cmds.split(), stdout=PIPE, stderr=STDOUT)
+    p.wait(timeout)
+    return p.stdout.readline().decode()
+
+
+def getCurrentPath():
+    return os.path.dirname(__file__)
+
+
+def getAndroidSdk():
+    ret = ecallv('adb shell getprop ro.build.version.sdk')
+    sdk = -1
+    try:
+        sdk = int(ret)
+    except ValueError:
+        pass
+    return sdk
+
 
 class AService:
     def __init__(self, cb=None):
@@ -26,7 +47,7 @@ class AService:
 
     def stop(self):
         self.disconnect()
-        self.callCb('stoped')
+        self.callCb('stopped')
 
     def connect(self):
         self.callCb('connected')
@@ -43,7 +64,11 @@ class AMonitorService(AService):
         self.tryTimer = None
 
     def install(self):
-        ret = ecall('adb install -r -g app/MonitorService.apk')
+        sdk = getAndroidSdk()
+        if sdk < 0:
+            return
+        curdir = getCurrentPath()
+        ret = ecall('adb install -r -g ' + curdir + '/app/MonitorService.apk')
         if ret == 0:
             super().install()
 
@@ -77,7 +102,7 @@ class AMonitorService(AService):
         self.popen = None
         self.needStop = True
         self.disconnect()
-        self.callCb('stoped')
+        self.callCb('stopped')
 
     def connect(self):
         if self.needStop:
@@ -129,9 +154,17 @@ class AMonkeyService(AService):
         self.watchDogTimer = None
 
     def install(self):
-        ret = ecall('adb push app/monkey.jar /data/local/tmp/')
-        ret |= ecall('adb push app/monkey /data/local/tmp/')
-        ret |= ecall('adb shell chmod u+x /data/local/tmp/monkey')
+        sdk = getAndroidSdk()
+        curdir = getCurrentPath()
+        if sdk > 25:
+            ecall('adb push ' + curdir + '/app/8.1/monkey.jar /data/local/tmp/')
+            ecall('adb push ' + curdir + '/app/8.1/monkey /data/local/tmp/')
+        elif sdk > 0:
+            ecall('adb push ' + curdir + '/app/monkey.jar /data/local/tmp/')
+            ecall('adb push ' + curdir + '/app/monkey /data/local/tmp/')
+        else:
+            return
+        ret = ecall('adb shell chmod u+x /data/local/tmp/monkey')
         if ret == 0:
             super().install()
 
@@ -167,7 +200,7 @@ class AMonkeyService(AService):
         self.needStop = True
         self.disconnect()
         self.popen = None
-        self.callCb('stoped')
+        self.callCb('stopped')
 
     def connect(self):
         if self.needStop:

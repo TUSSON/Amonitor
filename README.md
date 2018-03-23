@@ -1,5 +1,5 @@
 # Amonitor
-- [x] Device tested on Android 6.0, 7.1
+- [x] Device tested on Android 6.0, 7.1, 8.1
 - [x] PC tested on mac 10.13.3 and ubuntu 16.04
 - [x] no root need
 - [x] screen monitoring

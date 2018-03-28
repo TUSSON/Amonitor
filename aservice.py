@@ -66,6 +66,7 @@ class AMonitorService(AService):
     def install(self):
         sdk = getAndroidSdk()
         if sdk < 0:
+            time.sleep(1)
             return
         curdir = getCurrentPath()
         ret = ecall('adb install -r -g ' + curdir + '/app/MonitorService.apk')
@@ -163,27 +164,35 @@ class AMonkeyService(AService):
             ecall('adb push ' + curdir + '/app/monkey.jar /data/local/tmp/')
             ecall('adb push ' + curdir + '/app/monkey /data/local/tmp/')
         else:
+            self.tryStartCnt = 0
+            time.sleep(1)
             return
         ret = ecall('adb shell chmod u+x /data/local/tmp/monkey')
         if ret == 0:
             super().install()
 
     def _start(self):
+        self.tryStartCnt += 1
         cmds = 'adb shell /data/local/tmp/monkey --port 50001'
+        if self.tryStartCnt > 3:
+            print('try original monkey!')
+            cmds = 'adb shell monkey --port 50001'
+
         self.popen = Popen(cmds.split(), stdout=PIPE, stderr=STDOUT)
         self.tryTimer = Timer(0.1, self._processStartResult)
         self.tryTimer.start()
 
     def start(self):
+        self.tryStartCnt = 0
         self.needStop = False
         self._start()
 
     def _processStartResult(self):
         try:
-            self.popen.wait(1)
+            self.popen.wait(2)
             fd = self.popen.stdout
             line = fd.readline().decode()
-            time.sleep(1)
+            print('monkey exited:, ', line)
             if self.needStop:
                 return
             if not line.startswith('Error binding'):
@@ -192,6 +201,7 @@ class AMonkeyService(AService):
                 self.install()
                 self._start()
                 return
+            time.sleep(1)
         except TimeoutExpired:
             pass
         super().start()
@@ -245,6 +255,7 @@ class AMonkeyService(AService):
             self.watchDogTimer.start()
         else:
             # restart service
+            self.tryStartCnt = 0
             self._start()
 
     def disconnect(self):

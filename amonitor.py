@@ -136,9 +136,16 @@ class Monitor(QWidget):
             print('get device resolution failed!')
             return
 
+        hdiff = [dw * r - dh for r in (4/3, 16/9, 18/9)]
+        diff = 0
+        for d in hdiff:
+            if d >= 0:
+                diff = d
+                break
+
         self.dw = dw
-        self.dh = dh
-        print('device res is', self.dw, 'x', self.dh)
+        self.dh = dh + diff
+        print('device res is', self.dw, 'x', self.dh, 'diff:', diff)
 
     def update(self):
         if self.player is None:

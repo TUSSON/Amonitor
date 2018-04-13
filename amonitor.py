@@ -259,10 +259,10 @@ class Monitor(QWidget):
 
     def keyPressEvent(self, event):
         key = event.key()
-        print('key press:', key)
         if self.monkey:
             if key in vkeyToAndroidMaps:
                 dkey = vkeyToAndroidMaps[key]
+                #print('key press:', dkey)
                 self.monkey.keyDown(dkey)
             else:
                 text = event.text()

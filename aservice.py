@@ -28,6 +28,17 @@ def getAndroidSdk():
         pass
     return sdk
 
+def getDeviceId():
+    cmds = 'adb devices'
+    p = Popen(cmds.split(), stdout=PIPE, stderr=STDOUT)
+    p.wait(1)
+    p.stdout.readline()
+    id = (p.stdout.readline().decode()).strip()
+    if 'device' in id:
+        id = id.split()[0]
+        return id
+    else:
+        return None
 
 class AService:
     def __init__(self, cb=None):
@@ -147,14 +158,14 @@ class AMonitorService(AService):
 
 
 class AMonkeyService(AService):
-    def __init__(self, cb=None, url=None):
+    def __init__(self, cb=None, url=None, tryNewCnt=1):
         super().__init__(cb)
         self.url = url
         self.monkey = None
         self.tryTimer = None
         self.watchDogTimer = None
-        self.tryNewMonkeyCnt = 1
-        self.isNewMoneky = True
+        self.tryNewMonkeyCnt = tryNewCnt
+        self.isNewMonkey = True
 
     def install(self):
         sdk = getAndroidSdk()
@@ -178,7 +189,7 @@ class AMonkeyService(AService):
         cmds = 'adb shell /data/local/tmp/monkey --port 50001'
         if self.tryStartCnt > self.tryNewMonkeyCnt:
             print('try original monkey!')
-            self.isNewMoneky = False
+            self.isNewMonkey = False
             cmds = 'adb shell monkey --port 50001'
 
         self.popen = Popen(cmds.split(), stdout=PIPE, stderr=STDOUT)

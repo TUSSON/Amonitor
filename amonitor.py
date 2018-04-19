@@ -5,15 +5,16 @@ from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout,
         QLabel, QPushButton, QApplication, QMenu,
                              QFrame, QSizePolicy)
 from PyQt5.QtGui import QPixmap, QImage, QIcon
-from PyQt5.QtCore import QThread, QBasicTimer, Qt, QEvent, QSize
+from PyQt5.QtCore import QThread, QBasicTimer, Qt, QEvent, QSize, QRect
 from ffpyplayer.pic import Image
 from ffpyplayer.player import MediaPlayer
 from subprocess import Popen, call
 import sys, time, os
 from threading import Timer
 from monkey import Monkey
-from aservice import AMonitorService, AMonkeyService
+from aservice import AMonitorService, AMonkeyService, getCurrentPath, getDeviceId
 from keymap import vkeyToAndroidMaps
+import pickle
 
 class KeyButton(QPushButton):
     def __init__(self, text='', icon=None, parent=None, keycode=None):
@@ -38,11 +39,55 @@ class Monitor(QWidget):
     def __init__(self, url, monkeyUrl=None,  parent=None):
         super().__init__(parent)
         self.timer = QBasicTimer()
+        self.device = None
+        self.config = {}
+        self.configFile = getCurrentPath() + '/.devconfig'
+        self.devconfig = None
+        self.loadConfig()
         self.initService(url, monkeyUrl)
         self.initUI()
         self.timercount = 0
         self.framecount = 0
         self.timer.start(15, self)
+
+    def setDefaultConfig(self):
+        if self.devconfig is None:
+            self.devconfig = {}
+        if 'navbar' not in self.devconfig:
+            self.devconfig['navbar'] = True
+        if 'geometry' not in self.devconfig:
+            self.devconfig['geometry'] = QRect(600, 100, 300, 350)
+        if 'res' not in self.devconfig:
+            self.devconfig['res'] = [1080, 1920]
+        if 'isNewMonkey' not in self.devconfig:
+            self.devconfig['isNewMonkey'] = True
+
+    def loadConfig(self):
+        if self.device is None:
+            device = getDeviceId()
+            if device:
+                self.device = device
+        if self.device:
+            try:
+                with open(self.configFile, 'rb') as f:
+                    self.config = pickle.load(f)
+                    if self.device in self.config:
+                        self.devconfig = self.config[self.device]
+            except (FileNotFoundError, KeyError, TypeError):
+                pass
+            self.setDefaultConfig()
+
+    def saveConfig(self):
+        if not self.device:
+            return
+        self.devconfig['navbar'] = self.hboxframe.isVisible()
+        self.devconfig['geometry'] = self.geometry()
+        self.devconfig['res'] = [int(self.dw), int(self.dh)]
+        self.devconfig['isNewMonkey'] = self.monkeyService.isNewMonkey
+        self.config[self.device] = self.devconfig
+        with open(self.configFile, 'wb') as f:
+            pickle.dump(self.config, f, pickle.HIGHEST_PROTOCOL)
+            print('save config:', self.config)
 
     def initService(self, url, monkeyUrl):
         print('{} initService: {}'.format(time.monotonic(), 'start'))
@@ -53,15 +98,16 @@ class Monitor(QWidget):
         self.monitorService.start()
         # start monkey service
         self.monkey = None
+        tryNewCnt = 1 if self.devconfig['isNewMonkey'] else 0
         self.monkeyService = AMonkeyService(
-                cb=self.monkeyStatusChanged, url=monkeyUrl)
+            cb=self.monkeyStatusChanged,
+            url=monkeyUrl, tryNewCnt=tryNewCnt)
         self.monkeyService.start()
 
     def initUI(self):
-        self.dw = 1080
-        self.dh = 1920
-        self.setGeometry(600, 100, 300, 350)
-        self.ratio = self.height() / self.width()
+        self.dw, self.dh = self.devconfig['res']
+        self.setGeometry(self.devconfig['geometry'])
+        self.ratio = self.dh / self.dw
         self.scrolltimer = None
         self.scrollstep = 0
         self.resizetimer = None
@@ -98,8 +144,7 @@ class Monitor(QWidget):
         vbox.addWidget(hboxframe)
         self.vbox = vbox
         self.hboxframe = hboxframe
-        self.hboxframe.setVisible(False)
-
+        self.hboxframe.setVisible(self.devconfig['navbar'])
         self.updateTitleStatus('≠')
         self.show()
 
@@ -296,7 +341,7 @@ class Monitor(QWidget):
         menu = QMenu(self)
         navbar = menu.addAction("Show/Hide Navigation Bar")
         rotate = []
-        if self.monkey and self.monkeyService.isNewMoneky:
+        if self.monkey and self.monkeyService.isNewMonkey:
             rotateMenu = QMenu('Rotate', menu)
             menu.addMenu(rotateMenu)
             rotate = [rotateMenu.addAction(i) for i in ['Portrait', 'Landscape']]
@@ -314,6 +359,7 @@ class Monitor(QWidget):
             self.rotate(index)
 
     def closeEvent(self, event):
+        self.saveConfig()
         self.timer.stop()
         self.monitorService.stop()
         self.monkeyService.stop()

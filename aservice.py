@@ -153,6 +153,8 @@ class AMonkeyService(AService):
         self.monkey = None
         self.tryTimer = None
         self.watchDogTimer = None
+        self.tryNewMonkeyCnt = 1
+        self.isNewMoneky = True
 
     def install(self):
         sdk = getAndroidSdk()
@@ -174,8 +176,9 @@ class AMonkeyService(AService):
     def _start(self):
         self.tryStartCnt += 1
         cmds = 'adb shell /data/local/tmp/monkey --port 50001'
-        if self.tryStartCnt > 3:
+        if self.tryStartCnt > self.tryNewMonkeyCnt:
             print('try original monkey!')
+            self.isNewMoneky = False
             cmds = 'adb shell monkey --port 50001'
 
         self.popen = Popen(cmds.split(), stdout=PIPE, stderr=STDOUT)
@@ -191,14 +194,17 @@ class AMonkeyService(AService):
         try:
             self.popen.wait(2)
             fd = self.popen.stdout
-            line = fd.readline().decode()
+            line = ''.join([l.decode() for l in fd.readlines()])
             print('monkey exited:, ', line)
             if self.needStop:
                 return
-            if not line.startswith('Error binding'):
+            if 'Error binding' not in line:
                 # try install and start again
                 self.popen = None
-                self.install()
+                if self.tryNewMonkeyCnt > 0:
+                    self.install()
+                else:
+                    time.sleep(1)
                 self._start()
                 return
             time.sleep(1)

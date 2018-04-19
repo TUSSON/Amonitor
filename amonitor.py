@@ -295,9 +295,11 @@ class Monitor(QWidget):
     def contextMenuEvent(self, event):
         menu = QMenu(self)
         navbar = menu.addAction("Show/Hide Navigation Bar")
-        rotateMenu = QMenu('Rotate', menu)
-        menu.addMenu(rotateMenu)
-        rotate = [rotateMenu.addAction(i) for i in ['Portrait', 'Landscape']]
+        rotate = []
+        if self.monkey and self.monkeyService.isNewMoneky:
+            rotateMenu = QMenu('Rotate', menu)
+            menu.addMenu(rotateMenu)
+            rotate = [rotateMenu.addAction(i) for i in ['Portrait', 'Landscape']]
         injectAllow = -1
         if self.monkey and self.framecount == 0:
             injectAllow = menu.addAction("InjectAllowMonitor")

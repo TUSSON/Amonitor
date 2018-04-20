@@ -63,10 +63,9 @@ class Monitor(QWidget):
             self.devconfig['isNewMonkey'] = True
 
     def loadConfig(self):
-        if self.device is None:
-            device = getDeviceId()
-            if device:
-                self.device = device
+        device = getDeviceId()
+        if device:
+            self.device = device
         if self.device:
             try:
                 with open(self.configFile, 'rb') as f:
@@ -75,7 +74,7 @@ class Monitor(QWidget):
                         self.devconfig = self.config[self.device]
             except (FileNotFoundError, KeyError, TypeError):
                 pass
-            self.setDefaultConfig()
+        self.setDefaultConfig()
 
     def saveConfig(self):
         if not self.device:
@@ -88,6 +87,12 @@ class Monitor(QWidget):
         with open(self.configFile, 'wb') as f:
             pickle.dump(self.config, f, pickle.HIGHEST_PROTOCOL)
             print('save config:', self.config)
+
+    def updateConfig(self):
+        self.dw, self.dh = self.devconfig['res']
+        self.ratio = self.dh / self.dw
+        self.setGeometry(self.devconfig['geometry'])
+        self.hboxframe.setVisible(self.devconfig['navbar'])
 
     def initService(self, url, monkeyUrl):
         print('{} initService: {}'.format(time.monotonic(), 'start'))
@@ -105,9 +110,6 @@ class Monitor(QWidget):
         self.monkeyService.start()
 
     def initUI(self):
-        self.dw, self.dh = self.devconfig['res']
-        self.setGeometry(self.devconfig['geometry'])
-        self.ratio = self.dh / self.dw
         self.scrolltimer = None
         self.scrollstep = 0
         self.resizetimer = None
@@ -144,15 +146,18 @@ class Monitor(QWidget):
         vbox.addWidget(hboxframe)
         self.vbox = vbox
         self.hboxframe = hboxframe
-        self.hboxframe.setVisible(self.devconfig['navbar'])
         self.updateTitleStatus('≠')
+        self.updateConfig()
         self.show()
 
     def monitorStatusChanged(self, status):
         print('{} monitor: {}'.format(time.monotonic(), status))
         if status == 'connected':
+            self.loadConfig()
+            self.updateConfig()
             self.player = self.monitorService.player
         elif status == 'disconnected':
+            self.saveConfig()
             self.player = None
             self.updateTitleStatus('≠')
 
@@ -359,7 +364,6 @@ class Monitor(QWidget):
             self.rotate(index)
 
     def closeEvent(self, event):
-        self.saveConfig()
         self.timer.stop()
         self.monitorService.stop()
         self.monkeyService.stop()

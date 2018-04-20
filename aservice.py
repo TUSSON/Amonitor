@@ -43,11 +43,13 @@ def getDeviceId():
 class AService:
     def __init__(self, cb=None):
         self.cb = cb
+        self.status = None
         pass
 
     def callCb(self, status=None):
-        if self.cb:
+        if self.cb and self.status != status:
             self.cb(status)
+        self.status = status
 
     def install(self):
         self.callCb('installed')
@@ -71,6 +73,7 @@ class AMonitorService(AService):
     def __init__(self, cb=None, url=None):
         super().__init__(cb)
         self.url = url
+        self.port = url.split(':')[-1]
         self.player = None
         self.tryTimer = None
 
@@ -102,7 +105,6 @@ class AMonitorService(AService):
         if line1.startswith('Starting') and not line2.startswith('Error'):
             self.callCb('started')
             return
-        time.sleep(1)
         if self.needStop:
             return
         # try install and start again
@@ -123,7 +125,7 @@ class AMonitorService(AService):
             print('need url for connect')
             return
 
-        ecall('adb forward tcp:50000 tcp:50000')
+        ecall('adb forward tcp:' + self.port + ' tcp:' + self.port)
         lib_opts = {'analyzeduration': '32', 'flags': 'low_delay'}
         if self.player:
             self.player.close_player()
@@ -140,7 +142,7 @@ class AMonitorService(AService):
             self.connectedTimer = None
 
         if selector in ('read:error', 'eof'):
-            self.callCb('disconnected')
+            super().disconnect()
             self.tryTimer = None
             self.tryTimer = Timer(1, self.connect)
             self.tryTimer.start()
@@ -161,6 +163,7 @@ class AMonkeyService(AService):
     def __init__(self, cb=None, url=None, tryNewCnt=1):
         super().__init__(cb)
         self.url = url
+        self.port = url.split(':')[-1]
         self.monkey = None
         self.tryTimer = None
         self.watchDogTimer = None
@@ -186,11 +189,11 @@ class AMonkeyService(AService):
 
     def _start(self):
         self.tryStartCnt += 1
-        cmds = 'adb shell /data/local/tmp/monkey --port 50001'
+        cmds = 'adb shell /data/local/tmp/monkey --port ' + self.port
         if self.tryStartCnt > self.tryNewMonkeyCnt:
             print('try original monkey!')
             self.isNewMonkey = False
-            cmds = 'adb shell monkey --port 50001'
+            cmds = 'adb shell monkey --port ' + self.port
 
         self.popen = Popen(cmds.split(), stdout=PIPE, stderr=STDOUT)
         self.tryTimer = Timer(0.1, self._processStartResult)
@@ -199,6 +202,7 @@ class AMonkeyService(AService):
     def start(self):
         self.tryStartCnt = 0
         self.needStop = False
+        self.isNewMonkey = True
         self._start()
 
     def _processStartResult(self):
@@ -236,7 +240,7 @@ class AMonkeyService(AService):
             print('need url for connect')
             return
 
-        ecall('adb forward tcp:50001 tcp:50001')
+        ecall('adb forward tcp:' + self.port + ' tcp:' + self.port)
         try:
             monkey = Monkey(self.url)
         except OSError:

@@ -45,6 +45,7 @@ class Monitor(QWidget):
         self.devconfig = None
         self.loadConfig()
         self.player = None
+        self.fps = 0
         self.initService(url, monkeyUrl)
         self.initUI()
         self.timercount = 0
@@ -114,7 +115,7 @@ class Monitor(QWidget):
             self.player = self.monitorService.player
         elif status == 'disconnected':
             self.player = None
-            self.updateTitleStatus('≠')
+            self.updateTitleStatus()
 
     def monkeyStatusChanged(self, status):
         print('{} monkey: {}'.format(time.monotonic(), status))
@@ -125,7 +126,8 @@ class Monitor(QWidget):
                 self.updateTitleStatus()
         elif status == 'disconnected':
             self.monkey = None
-            self.updateTitleStatus('≠')
+            self.fps = 0
+            self.updateTitleStatus()
 
     def initService(self, url, monkeyUrl):
         print('{} initService: {}'.format(time.monotonic(), 'start'))
@@ -176,14 +178,18 @@ class Monitor(QWidget):
         vbox.addWidget(hboxframe)
         self.vbox = vbox
         self.hboxframe = hboxframe
-        self.updateTitleStatus('≠')
+        self.updateTitleStatus()
         self.updateConfig()
         self.show()
 
-    def updateTitleStatus(self, status='', fps=0):
-        txt = 'amonitor ' + status
-        if fps > 0:
-            txt = 'amonitor fps: {}'.format(fps)
+    def updateTitleStatus(self):
+        txt = ''
+        if self.monitorService.status == 'connected':
+            txt += '🖥'
+        if self.monkeyService.status == 'connected':
+            txt += '⌨️'
+        if self.fps > 0:
+            txt += ' {}'.format(self.fps)
         self.setWindowTitle(txt)
 
     def updateDeviceRes(self):
@@ -234,9 +240,8 @@ class Monitor(QWidget):
             self.lbl.setPixmap(QPixmap(qimg))
             if self.timercount > 200:
                 fps = int(self.framecount / 3)
-                if fps > 0:
-                    self.updateTitleStatus(fps=fps)
-                print('iw:', iw, 'ih:', ih, 'fps: ', fps)
+                self.fps = fps
+                self.updateTitleStatus()
                 self.framecount = 0
                 self.timercount = 0
             self.framecount += 1

@@ -12,7 +12,7 @@ from subprocess import Popen, call
 import sys, time, os
 from threading import Timer
 from monkey import Monkey
-from aservice import AMonitorService, AMonkeyService, getCurrentPath, getDeviceId
+from aservice import ADBService, AMonitorService, AMonkeyService, getCurrentPath, getDeviceId
 from keymap import vkeyToAndroidMaps
 import pickle
 
@@ -44,6 +44,7 @@ class Monitor(QWidget):
         self.configFile = getCurrentPath() + '/.devconfig'
         self.devconfig = None
         self.loadConfig()
+        self.player = None
         self.initService(url, monkeyUrl)
         self.initUI()
         self.timercount = 0
@@ -94,20 +95,49 @@ class Monitor(QWidget):
         self.setGeometry(self.devconfig['geometry'])
         self.hboxframe.setVisible(self.devconfig['navbar'])
 
+    def adbStatusChanged(self, status):
+        print('{} adb({}): {}'.format(time.monotonic(), self.adbService.devId, status))
+        if status == 'connected':
+            self.loadConfig()
+            self.monkeyService.tryNewMonkeyCnt = 1 if self.devconfig['isNewMonkey'] else 0
+            self.monkeyService.start()
+            self.monitorService.start()
+        elif status == 'disconnected':
+            self.saveConfig()
+            self.monitorService.stop()
+            self.monkeyService.stop()
+
+    def monitorStatusChanged(self, status):
+        print('{} monitor: {}'.format(time.monotonic(), status))
+        if status == 'connected':
+            self.updateConfig()
+            self.player = self.monitorService.player
+        elif status == 'disconnected':
+            self.player = None
+            self.updateTitleStatus('≠')
+
+    def monkeyStatusChanged(self, status):
+        print('{} monkey: {}'.format(time.monotonic(), status))
+        if status == 'connected':
+            self.monkey = self.monkeyService.monkey
+            self.updateDeviceRes()
+            if self.framecount > 0:
+                self.updateTitleStatus()
+        elif status == 'disconnected':
+            self.monkey = None
+            self.updateTitleStatus('≠')
+
     def initService(self, url, monkeyUrl):
         print('{} initService: {}'.format(time.monotonic(), 'start'))
-        # start screen monitor service
-        self.player = None
         self.monitorService = AMonitorService(
-                cb=self.monitorStatusChanged, url=url)
-        self.monitorService.start()
+            cb=self.monitorStatusChanged, url=url)
+        self.adbService = ADBService(cb=self.adbStatusChanged)
+        self.adbService.start()
         # start monkey service
         self.monkey = None
-        tryNewCnt = 1 if self.devconfig['isNewMonkey'] else 0
         self.monkeyService = AMonkeyService(
             cb=self.monkeyStatusChanged,
-            url=monkeyUrl, tryNewCnt=tryNewCnt)
-        self.monkeyService.start()
+            url=monkeyUrl)
 
     def initUI(self):
         self.scrolltimer = None
@@ -149,28 +179,6 @@ class Monitor(QWidget):
         self.updateTitleStatus('≠')
         self.updateConfig()
         self.show()
-
-    def monitorStatusChanged(self, status):
-        print('{} monitor: {}'.format(time.monotonic(), status))
-        if status == 'connected':
-            self.loadConfig()
-            self.updateConfig()
-            self.player = self.monitorService.player
-        elif status == 'disconnected':
-            self.saveConfig()
-            self.player = None
-            self.updateTitleStatus('≠')
-
-    def monkeyStatusChanged(self, status):
-        print('{} monkey: {}'.format(time.monotonic(), status))
-        if status == 'connected':
-            self.monkey = self.monkeyService.monkey
-            self.updateDeviceRes()
-            if self.framecount > 0:
-                self.updateTitleStatus()
-        elif status == 'disconnected':
-            self.monkey = None
-            self.updateTitleStatus('≠')
 
     def updateTitleStatus(self, status='', fps=0):
         txt = 'amonitor ' + status
@@ -365,8 +373,7 @@ class Monitor(QWidget):
 
     def closeEvent(self, event):
         self.timer.stop()
-        self.monitorService.stop()
-        self.monkeyService.stop()
+        self.adbService.stop()
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)

@@ -48,34 +48,63 @@ class AService:
 
     def callCb(self, status=None):
         if self.cb and self.status != status:
+            self.status = status
             self.cb(status)
-        self.status = status
-
-    def install(self):
-        self.callCb('installed')
 
     def start(self):
-        self.callCb('started')
         self.connect()
 
     def stop(self):
         self.disconnect()
-        self.callCb('stopped')
 
     def connect(self):
         self.callCb('connected')
 
     def disconnect(self):
-        self.callCb('disconnected')
+        if self.status == 'connected':
+            self.callCb('disconnected')
 
+
+class ADBService(AService):
+    def __init__(self, cb=None):
+        super().__init__(cb)
+        self.devId = None
+
+    def start(self):
+        self.needStop = False
+        super().start()
+
+    def stop(self):
+        self.needStop = True
+        super().stop()
+
+    def connect(self):
+        if self.needStop:
+            return
+        Timer(0.1, self._processConnectResult).start()
+
+    def _processConnectResult(self):
+        if self.needStop:
+            return
+        devId = getDeviceId()
+        if devId:
+            self.devId = devId
+            super().connect()
+        else:
+            super().disconnect()
+        time.sleep(0.2)
+        self.connect()
+
+    def disconnect(self):
+        super().disconnect()
 
 class AMonitorService(AService):
     def __init__(self, cb=None, url=None):
         super().__init__(cb)
         self.url = url
         self.port = url.split(':')[-1]
-        self.player = None
         self.tryTimer = None
+        self.player = None
 
     def install(self):
         sdk = getAndroidSdk()
@@ -84,8 +113,6 @@ class AMonitorService(AService):
             return
         curdir = getCurrentPath()
         ret = ecall('adb install -r -g ' + curdir + '/app/MonitorService.apk')
-        if ret == 0:
-            super().install()
 
     def _start(self):
         cmds = 'adb shell am start com.rock_chips.monitorservice/.MainActivity'
@@ -103,7 +130,6 @@ class AMonitorService(AService):
         line1 = fd.readline().decode()
         line2 = fd.readline().decode()
         if line1.startswith('Starting') and not line2.startswith('Error'):
-            self.callCb('started')
             return
         if self.needStop:
             return
@@ -116,7 +142,6 @@ class AMonitorService(AService):
         self.popen = None
         self.needStop = True
         self.disconnect()
-        self.callCb('stopped')
 
     def connect(self):
         if self.needStop:
@@ -128,6 +153,7 @@ class AMonitorService(AService):
         ecall('adb forward tcp:' + self.port + ' tcp:' + self.port)
         lib_opts = {'analyzeduration': '32', 'flags': 'low_delay'}
         if self.player:
+            print("monitor try reconnect!")
             self.player.close_player()
             self.player = None
         self.player = MediaPlayer(self.url,
@@ -156,19 +182,19 @@ class AMonitorService(AService):
             self.tryTimer = None
         if self.player:
             self.player.close_player()
+            self.player = None
         super().disconnect()
 
 
 class AMonkeyService(AService):
-    def __init__(self, cb=None, url=None, tryNewCnt=1):
+    def __init__(self, cb=None, url=None):
         super().__init__(cb)
         self.url = url
         self.port = url.split(':')[-1]
         self.monkey = None
         self.tryTimer = None
-        self.watchDogTimer = None
-        self.tryNewMonkeyCnt = tryNewCnt
         self.isNewMonkey = True
+        self.tryNewMonkeyCnt = 1
 
     def install(self):
         sdk = getAndroidSdk()
@@ -184,8 +210,6 @@ class AMonkeyService(AService):
             time.sleep(1)
             return
         ret = ecall('adb shell chmod u+x /data/local/tmp/monkey')
-        if ret == 0:
-            super().install()
 
     def _start(self):
         self.tryStartCnt += 1
@@ -231,7 +255,6 @@ class AMonkeyService(AService):
         self.needStop = True
         self.disconnect()
         self.popen = None
-        self.callCb('stopped')
 
     def connect(self):
         if self.needStop:
@@ -257,33 +280,12 @@ class AMonkeyService(AService):
         if ret != 'FAILED' and len(ret) > 0:
             # connected
             super().connect()
-            # start watchDogTimer
-            if self.watchDogTimer:
-                self.watchDogTimer.cancel()
-                self.watchDogTimer = None
-            self.watchDogTimer = Timer(2, self.watchDogDetect)
-            self.watchDogTimer.start()
         else:
             # retry connect
             self.monkey = None
             self.connect()
 
-    def watchDogDetect(self):
-        self.watchDogTimer = None
-        ret = self.monkey.getvar('build.id')
-        if ret != 'FAILED' and len(ret) > 0:
-            self.watchDogTimer = Timer(2, self.watchDogDetect)
-            self.watchDogTimer.start()
-        else:
-            # restart service
-            self.tryStartCnt = 0
-            self._start()
-
     def disconnect(self):
-        if self.watchDogTimer:
-            self.watchDogTimer.cancel()
-            self.watchDogTimer = None
-
         if self.tryTimer:
             self.tryTimer.cancel()
             self.tryTimer = None

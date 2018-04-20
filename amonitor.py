@@ -142,6 +142,7 @@ class Monitor(QWidget):
             url=monkeyUrl)
 
     def initUI(self):
+        self.setWindowIcon(QIcon(getCurrentPath() + '/res/icon.icns'))
         self.scrolltimer = None
         self.scrollstep = 0
         self.resizetimer = None
@@ -185,9 +186,9 @@ class Monitor(QWidget):
     def updateTitleStatus(self):
         txt = ''
         if self.monitorService.status == 'connected':
-            txt += '🖥'
+            txt += '📱'
         if self.monkeyService.status == 'connected':
-            txt += '⌨️'
+            txt += ' ⌨️'
         if self.fps > 0:
             txt += ' {}'.format(self.fps)
         self.setWindowTitle(txt)

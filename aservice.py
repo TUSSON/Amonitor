@@ -2,7 +2,7 @@ from subprocess import Popen, call, TimeoutExpired, PIPE, STDOUT
 from threading import Timer
 from ffpyplayer.player import MediaPlayer
 from monkey import Monkey
-import time, os
+import time, os, sys
 
 
 def ecall(cmds):
@@ -19,8 +19,12 @@ def getCurrentPath():
     return os.path.dirname(__file__)
 
 
+def adb_path():
+    return getCurrentPath() + '/app/adb-' + sys.platform
+
+
 def getAndroidSdk():
-    ret = ecallv('adb shell getprop ro.build.version.sdk')
+    ret = ecallv(adb_path() + ' shell getprop ro.build.version.sdk')
     sdk = -1
     try:
         sdk = int(ret)
@@ -29,7 +33,7 @@ def getAndroidSdk():
     return sdk
 
 def getDeviceId():
-    cmds = 'adb devices'
+    cmds = adb_path() + ' devices'
     p = Popen(cmds.split(), stdout=PIPE, stderr=STDOUT)
     p.wait(1)
     p.stdout.readline()
@@ -112,10 +116,10 @@ class AMonitorService(AService):
             time.sleep(1)
             return
         curdir = getCurrentPath()
-        ret = ecall('adb install -r -g ' + curdir + '/app/MonitorService.apk')
+        ret = ecall(adb_path() + ' install -r -g ' + curdir + '/app/MonitorService.apk')
 
     def _start(self):
-        cmds = 'adb shell am start com.rock_chips.monitorservice/.MainActivity'
+        cmds = adb_path() + ' shell am start com.rock_chips.monitorservice/.MainActivity'
         self.popen = Popen(cmds.split(), stdout=PIPE, stderr=STDOUT)
         Timer(0.1, self._processStartResult).start()
 
@@ -150,7 +154,7 @@ class AMonitorService(AService):
             print('need url for connect')
             return
 
-        ecall('adb forward tcp:' + self.port + ' tcp:' + self.port)
+        ecall(adb_path() + ' forward tcp:' + self.port + ' tcp:' + self.port)
         lib_opts = {'analyzeduration': '32', 'flags': 'low_delay'}
         if self.player:
             print("monitor try reconnect!")
@@ -200,24 +204,24 @@ class AMonkeyService(AService):
         sdk = getAndroidSdk()
         curdir = getCurrentPath()
         if sdk > 25:
-            ecall('adb push ' + curdir + '/app/8.1/monkey.jar /data/local/tmp/')
-            ecall('adb push ' + curdir + '/app/8.1/monkey /data/local/tmp/')
+            ecall(adb_path() + ' push ' + curdir + '/app/8.1/monkey.jar /data/local/tmp/')
+            ecall(adb_path() + ' push ' + curdir + '/app/8.1/monkey /data/local/tmp/')
         elif sdk > 0:
-            ecall('adb push ' + curdir + '/app/monkey.jar /data/local/tmp/')
-            ecall('adb push ' + curdir + '/app/monkey /data/local/tmp/')
+            ecall(adb_path() + ' push ' + curdir + '/app/monkey.jar /data/local/tmp/')
+            ecall(adb_path() + ' push ' + curdir + '/app/monkey /data/local/tmp/')
         else:
             self.tryStartCnt = 0
             time.sleep(1)
             return
-        ret = ecall('adb shell chmod u+x /data/local/tmp/monkey')
+        ret = ecall(adb_path() + ' shell chmod u+x /data/local/tmp/monkey')
 
     def _start(self):
         self.tryStartCnt += 1
-        cmds = 'adb shell /data/local/tmp/monkey --port ' + self.port
+        cmds = adb_path() + ' shell /data/local/tmp/monkey --port ' + self.port
         if self.tryStartCnt > self.tryNewMonkeyCnt:
             print('try original monkey!')
             self.isNewMonkey = False
-            cmds = 'adb shell monkey --port ' + self.port
+            cmds = adb_path() + ' shell monkey --port ' + self.port
 
         self.popen = Popen(cmds.split(), stdout=PIPE, stderr=STDOUT)
         self.tryTimer = Timer(0.1, self._processStartResult)
@@ -263,7 +267,7 @@ class AMonkeyService(AService):
             print('need url for connect')
             return
 
-        ecall('adb forward tcp:' + self.port + ' tcp:' + self.port)
+        ecall(adb_path() + ' forward tcp:' + self.port + ' tcp:' + self.port)
         try:
             monkey = Monkey(self.url)
         except OSError:

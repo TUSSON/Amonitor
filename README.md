@@ -30,6 +30,12 @@ High frame rate low latency and free open source screen monitor for Android (lik
 ./amonitor.py
 ```
 
+## Generate App for OSX
+```
+rm -rf build dist && python setup.py py2app -A
+mv dist/amonitor.app /Applications
+```
+
 ## Problems
 1. Latency too large, last frame not update.
 > Please enable floating window permission.
